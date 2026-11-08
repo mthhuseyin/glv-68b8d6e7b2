@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="tr"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Eldiven Antrenman</title>
+<link rel="manifest" href="manifest.json"><link rel="icon" href="icon.svg"><meta name="theme-color" content="#0e1116">
+<style>
+:root{--bg:#0e1116;--card:#1a2029;--line:#2a3340;--tx:#e8edf3;--mut:#8b97a6;--acc:#ff5a36;--ok:#2fbf71;--warn:#f2b93b}
+@media (prefers-color-scheme:light){:root{--bg:#f3f5f8;--card:#fff;--line:#d9dee5;--tx:#17202b;--mut:#5d6877}}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,Segoe UI,Roboto,sans-serif}
+body{padding:0 16px 40px;max-width:1000px;margin:0 auto}
+header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:14px 0}
+h1{font-size:20px;margin:0 auto 0 0}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;min-height:48px;cursor:pointer}
+button.pri{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+button:disabled{opacity:.45;cursor:default}
+.glove{display:flex;gap:8px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 10px;min-height:48px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--mut)}.dot.on{background:var(--ok)}
+nav{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:16px;overflow-x:auto}
+nav button{border:0;border-radius:10px 10px 0 0;background:none;color:var(--mut);white-space:nowrap}
+nav button.on{color:var(--tx);border-bottom:3px solid var(--acc)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+.big{font-size:clamp(72px,18vw,150px);font-weight:700;line-height:1;text-align:center;font-variant-numeric:tabular-nums}
+.sub{text-align:center;color:var(--mut)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.stat{background:var(--bg);border-radius:12px;padding:10px;text-align:center}.stat b{display:block;font-size:26px}.stat span{color:var(--mut);font-size:13px}
+.bar{height:22px;background:var(--bg);border-radius:11px;overflow:hidden;margin-top:8px}.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ok),var(--warn),var(--acc));transition:width .08s}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.row>*{flex:0 0 auto}
+.phase{text-align:center;font-size:22px;font-weight:600}.timer{font-size:clamp(56px,14vw,110px);text-align:center;font-weight:700;font-variant-numeric:tabular-nums}
+.rest{color:var(--warn)}.work{color:var(--ok)}
+input[type=number],input[type=text],select{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;min-height:44px;width:100%}
+label{display:block;color:var(--mut);font-size:13px;margin:6px 0 2px}
+table{width:100%;border-collapse:collapse}th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}
+th{color:var(--mut);font-weight:500;font-size:13px}
+canvas{width:100%;height:160px}
+.hide{display:none}.msg{color:var(--warn);min-height:1.4em}
+</style></head><body>
+<header>
+  <h1>🥊 Eldiven Antrenman</h1>
+  <div class="glove"><span class="dot" id="dR"></span><span id="tR">Sağ: yok</span><button id="bR">Bağlan</button></div>
+  <div class="glove"><span class="dot" id="dL"></span><span id="tL">Sol: yok</span><button id="bL">Bağlan</button></div>
+</header>
+<div class="msg" id="msg"></div>
+<nav id="nav"><button data-t="train" class="on">Antrenman</button><button data-t="prog">Programlar</button><button data-t="hist">Geçmiş</button><button data-t="set">Ayarlar</button></nav>
+
+<section id="train">
+  <div class="card">
+    <div id="phaseBox" class="hide"><div class="phase" id="phaseName"></div><div class="timer" id="timer"></div><div class="sub" id="roundInfo"></div></div>
+    <div class="big" id="count">0</div><div class="sub">yumruk</div>
+    <div class="bar"><i id="pbar"></i></div>
+    <div class="sub" id="plabel">son yumruk gücü: –</div>
+  </div>
+  <div class="grid card">
+    <div class="stat"><b id="sR">0</b><span>Sağ</span></div><div class="stat"><b id="sL">0</b><span>Sol</span></div>
+    <div class="stat"><b id="sAvg">–</b><span>Ort. güç (g)</span></div><div class="stat"><b id="sMax">–</b><span>En yüksek (g)</span></div>
+    <div class="stat"><b id="sRate">0</b><span>Yumruk/dk</span></div><div class="stat"><b id="sTime">0:00</b><span>Süre</span></div>
+  </div>
+  <div class="row card">
+    <select id="progSel" style="flex:1 1 220px"></select>
+    <button class="pri" id="bStart">Başlat</button><button id="bStop" disabled>Bitir</button><button id="bDemo" title="Eldiven yokken deneme">Demo</button>
+  </div>
+</section>
+
+<section id="prog" class="hide">
+  <div class="card"><h3 style="margin-top:0">Yeni / düzenle</h3>
+    <div class="grid">
+      <div><label>Ad</label><input type="text" id="pName" placeholder="Programım"></div>
+      <div><label>Tur sayısı</label><input type="number" id="pRounds" min="1" max="30" value="3"></div>
+      <div><label>Çalışma (sn)</label><input type="number" id="pWork" min="5" max="900" value="120"></div>
+      <div><label>Dinlenme (sn)</label><input type="number" id="pRest" min="0" max="600" value="45"></div>
+      <div><label>Kombinasyon çağrısı</label><select id="pCombo"><option value="0">Kapalı</option><option value="1">Açık</option></select></div>
+      <div><label>Hedef yumruk/tur (ops.)</label><input type="number" id="pTarget" min="0" max="999" value="0"></div>
+    </div>
+    <div class="row" style="margin-top:12px"><button class="pri" id="pSave">Kaydet</button></div>
+  </div>
+  <div class="card"><h3 style="margin-top:0">Programlarım</h3><div id="progList"></div></div>
+</section>
+
+<section id="hist" class="hide">
+  <div class="card"><canvas id="chart"></canvas></div>
+  <div class="card"><div class="row" style="margin-bottom:8px"><button id="bCsv">CSV indir</button><button id="bClear">Geçmişi sil</button></div>
+  <div style="overflow:auto"><table><thead><tr><th>Tarih</th><th>Program</th><th>Yumruk</th><th>Ort. g</th><th>Max g</th><th>Süre</th></tr></thead><tbody id="hBody"></tbody></table></div></div>
+</section>
+
+<section id="set" class="hide">
+  <div class="card">
+    <label>Hassasiyet: <b id="sensVal"></b> (düşük = sadece sert yumruk, yüksek = hafif hareket de sayılır)</label>
+    <input type="range" id="sens" min="1" max="10" step="1" style="width:100%">
+    <label><input type="checkbox" id="sndPunch"> Her yumrukta ses çal</label>
+    <label><input type="checkbox" id="sndVoice"> Sesli komut (Başla, Dinlen, kombinasyonlar)</label>
+    <p class="sub" style="text-align:left">İpucu: yumruk saymıyorsa hassasiyeti artır, kendi kendine sayıyorsa azalt.</p>
+  </div>
+</section>
+
+<script src="core.js"></script>
+<script>
+const $=id=>document.getElementById(id), LS={get:(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v==null?d:v}catch(e){return d}},set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const BUILTIN=[
+ {id:'b1',name:'Isınma — 2 tur × 1 dk / 30 sn',rounds:2,work:60,rest:30,combo:0,target:0},
+ {id:'b2',name:'Klasik boks — 3 tur × 3 dk / 1 dk',rounds:3,work:180,rest:60,combo:0,target:0},
+ {id:'b3',name:'Kombinasyon — 5 tur × 2 dk / 45 sn',rounds:5,work:120,rest:45,combo:1,target:0},
+ {id:'b4',name:'Sprint — 8 tur × 30 sn / 15 sn',rounds:8,work:30,rest:15,combo:0,target:0}];
+const COMBOS=['bir, iki','bir, iki, üç','bir, iki, üç, dört','jab, çapraz','jab, jab, çapraz','bir, iki, kroşe','jab, çapraz, kroşe, çapraz','savuştur, bir, iki'];
+let custom=LS.get('progs',[]), history=LS.get('hist',[]), cfg=Object.assign({sens:5,punchSnd:true,voice:true},LS.get('cfg',{}));
+const allProgs=()=>[{id:'free',name:'Serbest (süresiz)'},...BUILTIN,...custom];
+const gloves={R:{name:'Sağ',dev:null,det:new Core.Detector({sens:cfg.sens}),fr:new Core.Framer()},L:{name:'Sol',dev:null,det:new Core.Detector({sens:cfg.sens}),fr:new Core.Framer()}};
+let S=null, ctx=null, wl=null, tick=null, demoT=null;
+
+function msg(t){$('msg').textContent=t||''}
+function beep(f=880,d=.12,v=.15){try{ctx=ctx||new (window.AudioContext||window.webkitAudioContext)();const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=f;g.gain.value=v;o.connect(g);g.connect(ctx.destination);o.start();o.stop(ctx.currentTime+d)}catch(e){}}
+function say(t){if(!cfg.voice||!window.speechSynthesis)return;try{const u=new SpeechSynthesisUtterance(t);u.lang='tr-TR';speechSynthesis.cancel();speechSynthesis.speak(u)}catch(e){}}
+const fmt=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
+
+// ---- Bluetooth ----
+async function connect(h){
+  if(!navigator.bluetooth){msg('Bu tarayıcı Web Bluetooth desteklemiyor. Chrome veya Edge kullan.');return}
+  const G=gloves[h]; msg('Eldiven aranıyor…');
+  try{
+    const dev=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'FF'}],optionalServices:[0xffe0]});
+    dev.addEventListener('gattserverdisconnected',()=>{G.dev=null;ui(h);msg(G.name+' eldiven bağlantısı koptu. Eldiveni salla ve tekrar bağlan.')});
+    const srv=await dev.gatt.connect(), svc=await srv.getPrimaryService(0xffe0), ch=await svc.getCharacteristic(0xffe1);
+    G.fr=new Core.Framer(); G.det=new Core.Detector({sens:cfg.sens});
+    ch.addEventListener('characteristicvaluechanged',e=>{const v=new Uint8Array(e.target.value.buffer);const t=performance.now()/1000;for(const s of G.fr.push(v,t)){const p=G.det.push(s);if(p)punch(h,p)}});
+    await ch.startNotifications(); G.dev=dev; ui(h); msg('');
+  }catch(e){msg(e.name==='NotFoundError'?'Eldiven seçilmedi.':'Bağlanamadı: '+e.message)}
+}
+function ui(h){const G=gloves[h];$('d'+h).classList.toggle('on',!!G.dev);$('t'+h).textContent=G.name+': '+(G.dev?G.dev.name:'yok');$('b'+h).textContent=G.dev?'Kes':'Bağlan'}
+for(const h of ['R','L'])$('b'+h).onclick=()=>{const G=gloves[h];if(G.dev){G.dev.gatt.disconnect()}else connect(h)};
+
+// ---- Yumruk / oturum ----
+function punch(h,p){
+  if(!S||S.phase==='rest')return;
+  S.p.push({t:Date.now(),h,power:p.power,speed:p.speed,r:S.round});
+  S.rc[S.round]=(S.rc[S.round]||0)+1;
+  if(cfg.punchSnd)beep(h==='R'?1200:900,.05,.08);
+  $('pbar').style.width=Math.min(100,p.power/6*100)+'%'; $('plabel').textContent='son yumruk: '+p.power.toFixed(1)+' g · '+Math.round(p.speed)+' °/sn';
+  render();
+}
+function render(){
+  if(!S)return;
+  const n=S.p.length, R=S.p.filter(x=>x.h==='R').length, el=(Date.now()-S.t0)/1000, pw=S.p.map(x=>x.power);
+  $('count').textContent=n;$('sR').textContent=R;$('sL').textContent=n-R;
+  $('sAvg').textContent=n?(pw.reduce((a,b)=>a+b,0)/n).toFixed(1):'–';$('sMax').textContent=n?Math.max(...pw).toFixed(1):'–';
+  $('sTime').textContent=fmt(el);$('sRate').textContent=S.workSec>3?Math.round(n/S.workSec*60):0;
+}
+function buildPlan(p){const ph=[];for(let i=1;i<=p.rounds;i++){ph.push({type:'work',sec:p.work,round:i});if(p.rest>0&&i<p.rounds)ph.push({type:'rest',sec:p.rest,round:i})}return ph}
+async function start(){
+  if(S)return; const pr=allProgs().find(x=>x.id===$('progSel').value);
+  try{ctx=ctx||new (window.AudioContext||window.webkitAudioContext)()}catch(e){} try{wl=await navigator.wakeLock?.request('screen')}catch(e){}
+  S={prog:pr,p:[],rc:{},t0:Date.now(),round:1,phase:'work',plan:pr.id==='free'?null:buildPlan(pr),pi:0,pt0:Date.now(),workSec:0,lastC:0,lastTick:Date.now()};
+  $('count').textContent='0';$('bStart').disabled=true;$('bStop').disabled=false;$('phaseBox').classList.toggle('hide',!S.plan);
+  if(S.plan)enter(0);else{say('Başla');beep(1200,.3)}
+  tick=setInterval(loop,100);render();
+}
+function enter(i){
+  const ph=S.plan[i];S.pi=i;S.phase=ph.type;S.round=ph.round;S.pt0=Date.now();S.lastC=0;
+  $('phaseName').textContent=ph.type==='work'?'ÇALIŞ':'DİNLEN';$('phaseName').className='phase '+ph.type;
+  $('roundInfo').textContent='Tur '+ph.round+' / '+S.prog.rounds+(S.prog.target&&ph.type==='work'?' · hedef '+S.prog.target+' yumruk':'');
+  beep(ph.type==='work'?1200:600,.35);say(ph.type==='work'?'Başla':'Dinlen');
+}
+function loop(){
+  const now=Date.now(); if(S.phase==='work')S.workSec+=(now-S.lastTick)/1000; S.lastTick=now;
+  if(S.plan){
+    const ph=S.plan[S.pi],left=ph.sec-(now-S.pt0)/1000; $('timer').textContent=fmt(Math.ceil(left));
+    const sec=Math.ceil(left); if(sec<=3&&sec>0&&S.lb!==sec+'/'+S.pi){S.lb=sec+'/'+S.pi;beep(700,.08)}
+    if(S.phase==='work'&&S.prog.combo&&(now-S.pt0)/1000-S.lastC>=6&&left>4){S.lastC=(now-S.pt0)/1000;say(COMBOS[Math.floor(Math.random()*COMBOS.length)])}
+    if(left<=0){if(S.pi+1<S.plan.length)enter(S.pi+1);else finish()}
+  }
+  render();
+}
+function finish(){
+  if(!S)return;clearInterval(tick);tick=null;const n=S.p.length,pw=S.p.map(x=>x.power);
+  if(n>0){const rec={id:Date.now(),date:new Date().toISOString(),prog:S.prog.name,punches:n,right:S.p.filter(x=>x.h==='R').length,avg:+(pw.reduce((a,b)=>a+b,0)/n).toFixed(2),max:+Math.max(...pw).toFixed(2),sec:Math.round((Date.now()-S.t0)/1000),rounds:S.rc};
+    history.unshift(rec);history=history.slice(0,500);LS.set('hist',history);say('Bitti. '+n+' yumruk.');beep(1000,.5)}
+  msg(n?'Kaydedildi: '+n+' yumruk.':'Hiç yumruk sayılmadı, kaydedilmedi.');
+  try{wl&&wl.release()}catch(e){} wl=null; S=null;$('bStart').disabled=false;$('bStop').disabled=true;$('phaseBox').classList.add('hide');drawHist();
+}
+$('bStart').onclick=start;$('bStop').onclick=finish;
+$('bDemo').onclick=()=>{ // eldiven olmadan deneme: rastgele yumruklar uretir
+  if(demoT){clearInterval(demoT);demoT=null;$('bDemo').textContent='Demo';return}
+  $('bDemo').textContent='Demo durdur';demoT=setInterval(()=>punch(Math.random()<.5?'R':'L',{power:2+Math.random()*4,speed:450+Math.random()*350}),600);
+};
+
+// ---- Programlar ----
+function renderProgs(){
+  const cur=$('progSel').value;
+  $('progSel').innerHTML=allProgs().map(p=>`<option value="${p.id}">${p.name}</option>`).join('');if(cur)$('progSel').value=cur;
+  $('progList').innerHTML=custom.length?custom.map(p=>`<div class="row" style="justify-content:space-between;padding:6px 0"><span>${p.name.replace(/</g,'&lt;')} — ${p.rounds}×${p.work}sn/${p.rest}sn${p.combo?' · komb.':''}</span><span><button data-e="${p.id}">Düzenle</button> <button data-d="${p.id}">Sil</button></span></div>`).join(''):'<div class="sub">Henüz kendi programın yok.</div>';
+}
+$('pSave').onclick=()=>{
+  const nm=$('pName').value.trim()||'Programım',g=id=>Math.max(0,parseInt($(id).value)||0);
+  const e=custom.find(p=>p.id===$('pSave').dataset.id);
+  const p={id:e?e.id:'c'+Date.now(),name:nm,rounds:Math.max(1,g('pRounds')),work:Math.max(5,g('pWork')),rest:g('pRest'),combo:+$('pCombo').value,target:g('pTarget')};
+  custom=e?custom.map(x=>x.id===e.id?p:x):[...custom,p];LS.set('progs',custom);delete $('pSave').dataset.id;$('pName').value='';renderProgs();msg('Program kaydedildi.');
+};
+$('progList').onclick=e=>{const d=e.target.dataset;if(d.d){custom=custom.filter(p=>p.id!==d.d);LS.set('progs',custom);renderProgs()}
+  if(d.e){const p=custom.find(x=>x.id===d.e);$('pName').value=p.name;$('pRounds').value=p.rounds;$('pWork').value=p.work;$('pRest').value=p.rest;$('pCombo').value=p.combo;$('pTarget').value=p.target;$('pSave').dataset.id=p.id}};
+
+// ---- Geçmiş ----
+function drawHist(){
+  $('hBody').innerHTML=history.map(h=>`<tr><td>${new Date(h.date).toLocaleString('tr-TR',{dateStyle:'short',timeStyle:'short'})}</td><td style="text-align:left">${String(h.prog).replace(/</g,'&lt;')}</td><td>${h.punches}</td><td>${h.avg}</td><td>${h.max}</td><td>${fmt(h.sec)}</td></tr>`).join('')||'<tr><td colspan="6" class="sub">Kayıt yok.</td></tr>';
+  const c=$('chart'),r=c.getBoundingClientRect();if(!r.width)return;const dpr=devicePixelRatio||1;c.width=r.width*dpr;c.height=r.height*dpr;const x=c.getContext('2d');x.scale(dpr,dpr);x.clearRect(0,0,r.width,r.height);
+  const d=history.slice(0,14).reverse();const css=getComputedStyle(document.documentElement);
+  x.fillStyle=css.getPropertyValue('--mut');x.font='12px system-ui';
+  if(!d.length){x.fillText('Henüz antrenman yok',10,20);return}
+  const mx=Math.max(...d.map(h=>h.punches)),bw=(r.width-20)/d.length;
+  d.forEach((h,i)=>{const bh=(r.height-40)*h.punches/mx;x.fillStyle=css.getPropertyValue('--acc');x.fillRect(10+i*bw+4,r.height-20-bh,bw-8,bh);x.fillStyle=css.getPropertyValue('--mut');x.fillText(h.punches,10+i*bw+4,r.height-24-bh);const dt=new Date(h.date);x.fillText(dt.getDate()+'/'+(dt.getMonth()+1),10+i*bw+4,r.height-5)});
+}
+$('bCsv').onclick=()=>{const rows=[['tarih','program','yumruk','sag','sol','ort_g','max_g','sure_sn'],...history.map(h=>[h.date,h.prog,h.punches,h.right,h.punches-h.right,h.avg,h.max,h.sec])];
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+rows.map(r=>r.map(v=>`"${v}"`).join(';')).join('\n')],{type:'text/csv'}));a.download='antrenman_gecmisi.csv';a.click()};
+$('bClear').onclick=()=>{if(confirm('Tüm geçmiş silinsin mi?')){history=[];LS.set('hist',history);drawHist()}};
+
+// ---- Ayarlar / sekmeler ----
+function applySens(){for(const h of ['R','L'])gloves[h].det.setSens(cfg.sens);$('sensVal').textContent=cfg.sens}
+$('sens').value=cfg.sens;applySens();$('sndPunch').checked=cfg.punchSnd;$('sndVoice').checked=cfg.voice;
+$('sens').oninput=e=>{cfg.sens=+e.target.value;LS.set('cfg',cfg);applySens()};
+$('sndPunch').onchange=e=>{cfg.punchSnd=e.target.checked;LS.set('cfg',cfg)};$('sndVoice').onchange=e=>{cfg.voice=e.target.checked;LS.set('cfg',cfg)};
+$('nav').onclick=e=>{const t=e.target.dataset.t;if(!t)return;for(const b of $('nav').children)b.classList.toggle('on',b===e.target);for(const s of ['train','prog','hist','set'])$(s).classList.toggle('hide',s!==t);if(t==='hist')drawHist()};
+renderProgs();drawHist();render();ui('R');ui('L');
+if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script></body></html>
