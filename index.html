@@ -41,7 +41,7 @@ canvas{width:100%;height:160px}
   <div class="glove"><span class="dot" id="dL"></span><span id="tL">Sol: yok</span><button id="bL">Bağlan</button></div>
 </header>
 <div class="msg" id="msg"></div>
-<nav id="nav"><button data-t="train" class="on">Antrenman</button><button data-t="prog">Programlar</button><button data-t="hist">Geçmiş</button><button data-t="set">Ayarlar</button></nav>
+<nav id="nav"><button data-t="train" class="on">Antrenman</button><button data-t="prog">Programlar</button><button data-t="hist">Geçmiş</button><button data-t="dev">Gelişim</button><button data-t="set">Ayarlar</button></nav>
 
 <section id="train">
   <div class="card">
@@ -54,6 +54,7 @@ canvas{width:100%;height:160px}
     <div class="stat"><b id="sR">0</b><span>Sağ</span></div><div class="stat"><b id="sL">0</b><span>Sol</span></div>
     <div class="stat"><b id="sAvg">–</b><span>Ort. güç (g)</span></div><div class="stat"><b id="sMax">–</b><span>En yüksek (g)</span></div>
     <div class="stat"><b id="sRate">0</b><span>Yumruk/dk</span></div><div class="stat"><b id="sTime">0:00</b><span>Süre</span></div>
+    <div class="stat"><b id="sKcal">–</b><span>Kalori (tahmin)</span></div>
   </div>
   <div class="row card">
     <select id="progSel" style="flex:1 1 220px"></select>
@@ -79,15 +80,28 @@ canvas{width:100%;height:160px}
 <section id="hist" class="hide">
   <div class="card"><canvas id="chart"></canvas></div>
   <div class="card"><div class="row" style="margin-bottom:8px"><button id="bCsv">CSV indir</button><button id="bClear">Geçmişi sil</button></div>
-  <div style="overflow:auto"><table><thead><tr><th>Tarih</th><th>Program</th><th>Yumruk</th><th>Ort. g</th><th>Max g</th><th>Süre</th></tr></thead><tbody id="hBody"></tbody></table></div></div>
+  <div style="overflow:auto"><table><thead><tr><th>Tarih</th><th>Program</th><th>Yumruk</th><th>Ort. g</th><th>Max g</th><th>Yum/dk</th><th>kcal</th><th>Süre</th></tr></thead><tbody id="hBody"></tbody></table></div></div>
+</section>
+
+<section id="dev" class="hide">
+  <div class="card"><div id="devSum" class="grid"></div><p class="sub" id="devNote"></p></div>
+  <div class="card"><b>Yumruk hızı (yumruk/dk)</b><canvas id="c1"></canvas></div>
+  <div class="card"><b>Toplam yumruk</b><canvas id="c2"></canvas></div>
+  <div class="card"><b>Ortalama güç (g)</b><canvas id="c3"></canvas></div>
+  <div class="card"><b>El hızı (°/sn)</b><canvas id="c4"></canvas></div>
+  <div class="card"><b>Kalori (kcal, tahmin)</b><canvas id="c5"></canvas></div>
 </section>
 
 <section id="set" class="hide">
   <div class="card">
     <label>Hassasiyet: <b id="sensVal"></b> (düşük = sadece sert yumruk, yüksek = hafif hareket de sayılır)</label>
     <input type="range" id="sens" min="1" max="10" step="1" style="width:100%">
+    <label>Kilon (kg) — kalori tahmini için</label>
+    <input type="number" id="kg" min="30" max="250" placeholder="örn. 75" style="max-width:200px">
     <label><input type="checkbox" id="sndPunch"> Her yumrukta ses çal</label>
     <label><input type="checkbox" id="sndVoice"> Sesli komut (Başla, Dinlen, kombinasyonlar)</label>
+    <div class="row" style="margin:10px 0"><button id="bBak">Verileri yedekle (JSON)</button><button id="bImp">Yedekten içe aktar</button><input type="file" id="fImp" accept=".json,application/json" class="hide"></div>
+    <p class="sub" style="text-align:left">Kalori bir tahmindir (±%25), ölçüm değildir. PC ve tabletin geçmişi ayrı tutulur; yedekleyip içe aktararak taşıyabilirsin.</p>
     <p class="sub" style="text-align:left">İpucu: yumruk saymıyorsa hassasiyeti artır, kendi kendine sayıyorsa azalt.</p>
   </div>
 </section>
@@ -101,9 +115,11 @@ const BUILTIN=[
  {id:'b3',name:'Kombinasyon — 5 tur × 2 dk / 45 sn',rounds:5,work:120,rest:45,combo:1,target:0},
  {id:'b4',name:'Sprint — 8 tur × 30 sn / 15 sn',rounds:8,work:30,rest:15,combo:0,target:0}];
 const COMBOS=['bir, iki','bir, iki, üç','bir, iki, üç, dört','jab, çapraz','jab, jab, çapraz','bir, iki, kroşe','jab, çapraz, kroşe, çapraz','savuştur, bir, iki'];
-let custom=LS.get('progs',[]), history=LS.get('hist',[]), cfg=Object.assign({sens:7,punchSnd:true,voice:true},LS.get('cfg',{}));
+let custom=LS.get('progs',[]), history=LS.get('hist',[]), cfg=Object.assign({sens:7,punchSnd:true,voice:true,kg:0},LS.get('cfg',{}));
 const allProgs=()=>[{id:'free',name:'Serbest (süresiz)'},...BUILTIN,...custom];
 const gloves={R:{name:'Sağ',dev:null,det:new Core.Detector({sens:cfg.sens}),fr:new Core.Framer()},L:{name:'Sol',dev:null,det:new Core.Detector({sens:cfg.sens}),fr:new Core.Framer()}};
+function met(rate){return 4+Math.min(rate,120)/120*4}
+function kcalOf(kg,work,rest,rate){return kg>0?Math.round((met(rate)*work+2*rest)/3600*kg):null}
 let S=null, ctx=null, wl=null, tick=null, demoT=null;
 
 function msg(t){$('msg').textContent=t||''}
@@ -142,12 +158,13 @@ function render(){
   $('count').textContent=n;$('sR').textContent=R;$('sL').textContent=n-R;
   $('sAvg').textContent=n?(pw.reduce((a,b)=>a+b,0)/n).toFixed(1):'–';$('sMax').textContent=n?Math.max(...pw).toFixed(1):'–';
   $('sTime').textContent=fmt(el);$('sRate').textContent=S.workSec>3?Math.round(n/S.workSec*60):0;
+  const k=kcalOf(cfg.kg,S.workSec,S.restSec,S.workSec>3?n/S.workSec*60:0);$('sKcal').textContent=k==null?'kilo gir':k;
 }
 function buildPlan(p){const ph=[];for(let i=1;i<=p.rounds;i++){ph.push({type:'work',sec:p.work,round:i});if(p.rest>0&&i<p.rounds)ph.push({type:'rest',sec:p.rest,round:i})}return ph}
 async function start(){
   if(S)return; const pr=allProgs().find(x=>x.id===$('progSel').value);
   try{ctx=ctx||new (window.AudioContext||window.webkitAudioContext)()}catch(e){} try{wl=await navigator.wakeLock?.request('screen')}catch(e){}
-  S={prog:pr,p:[],rc:{},t0:Date.now(),round:1,phase:'work',plan:pr.id==='free'?null:buildPlan(pr),pi:0,pt0:Date.now(),workSec:0,lastC:0,lastTick:Date.now()};
+  S={prog:pr,p:[],rc:{},t0:Date.now(),round:1,phase:'work',plan:pr.id==='free'?null:buildPlan(pr),pi:0,pt0:Date.now(),workSec:0,restSec:0,lastC:0,lastTick:Date.now()};
   $('count').textContent='0';$('bStart').disabled=true;$('bStop').disabled=false;$('phaseBox').classList.toggle('hide',!S.plan);
   if(S.plan)enter(0);else{say('Başla');beep(1200,.3)}
   tick=setInterval(loop,100);render();
@@ -159,7 +176,7 @@ function enter(i){
   beep(ph.type==='work'?1200:600,.35);say(ph.type==='work'?'Başla':'Dinlen');
 }
 function loop(){
-  const now=Date.now(); if(S.phase==='work')S.workSec+=(now-S.lastTick)/1000; S.lastTick=now;
+  const now=Date.now(); if(S.phase==='work')S.workSec+=(now-S.lastTick)/1000; else S.restSec+=(now-S.lastTick)/1000; S.lastTick=now;
   if(S.plan){
     const ph=S.plan[S.pi],left=ph.sec-(now-S.pt0)/1000; $('timer').textContent=fmt(Math.ceil(left));
     const sec=Math.ceil(left); if(sec<=3&&sec>0&&S.lb!==sec+'/'+S.pi){S.lb=sec+'/'+S.pi;beep(700,.08)}
@@ -170,10 +187,10 @@ function loop(){
 }
 function finish(){
   if(!S)return;clearInterval(tick);tick=null;const n=S.p.length,pw=S.p.map(x=>x.power);
-  if(n>0){const rec={id:Date.now(),date:new Date().toISOString(),prog:S.prog.name,punches:n,right:S.p.filter(x=>x.h==='R').length,avg:+(pw.reduce((a,b)=>a+b,0)/n).toFixed(2),max:+Math.max(...pw).toFixed(2),sec:Math.round((Date.now()-S.t0)/1000),rounds:S.rc};
+  if(n>0){const rec={id:Date.now(),date:new Date().toISOString(),prog:S.prog.name,punches:n,right:S.p.filter(x=>x.h==='R').length,avg:+(pw.reduce((a,b)=>a+b,0)/n).toFixed(2),max:+Math.max(...pw).toFixed(2),sec:Math.round((Date.now()-S.t0)/1000),rounds:S.rc,work:Math.round(S.workSec),rest:Math.round(S.restSec),rate:S.workSec>3?Math.round(n/S.workSec*60):0,spd:Math.round(S.p.reduce((a,b)=>a+b.speed,0)/n),kg:cfg.kg||null,kcal:kcalOf(cfg.kg,S.workSec,S.restSec,S.workSec>3?n/S.workSec*60:0)};
     history.unshift(rec);history=history.slice(0,500);LS.set('hist',history);say('Bitti. '+n+' yumruk.');beep(1000,.5)}
   msg(n?'Kaydedildi: '+n+' yumruk.':'Hiç yumruk sayılmadı, kaydedilmedi.');
-  try{wl&&wl.release()}catch(e){} wl=null; S=null;$('bStart').disabled=false;$('bStop').disabled=true;$('phaseBox').classList.add('hide');drawHist();
+  try{wl&&wl.release()}catch(e){} wl=null; S=null;$('bStart').disabled=false;$('bStop').disabled=true;$('phaseBox').classList.add('hide');drawHist();drawDev();
 }
 $('bStart').onclick=start;$('bStop').onclick=finish;
 $('bDemo').onclick=()=>{ // eldiven olmadan deneme: rastgele yumruklar uretir
@@ -198,7 +215,7 @@ $('progList').onclick=e=>{const d=e.target.dataset;if(d.d){custom=custom.filter(
 
 // ---- Geçmiş ----
 function drawHist(){
-  $('hBody').innerHTML=history.map(h=>`<tr><td>${new Date(h.date).toLocaleString('tr-TR',{dateStyle:'short',timeStyle:'short'})}</td><td style="text-align:left">${String(h.prog).replace(/</g,'&lt;')}</td><td>${h.punches}</td><td>${h.avg}</td><td>${h.max}</td><td>${fmt(h.sec)}</td></tr>`).join('')||'<tr><td colspan="6" class="sub">Kayıt yok.</td></tr>';
+  $('hBody').innerHTML=history.map(h=>`<tr><td>${new Date(h.date).toLocaleString('tr-TR',{dateStyle:'short',timeStyle:'short'})}</td><td style="text-align:left">${String(h.prog).replace(/</g,'&lt;')}</td><td>${h.punches}</td><td>${h.avg}</td><td>${h.max}</td><td>${h.rate??'–'}</td><td>${h.kcal??'–'}</td><td>${fmt(h.sec)}</td></tr>`).join('')||'<tr><td colspan="8" class="sub">Kayıt yok.</td></tr>';
   const c=$('chart'),r=c.getBoundingClientRect();if(!r.width)return;const dpr=devicePixelRatio||1;c.width=r.width*dpr;c.height=r.height*dpr;const x=c.getContext('2d');x.scale(dpr,dpr);x.clearRect(0,0,r.width,r.height);
   const d=history.slice(0,14).reverse();const css=getComputedStyle(document.documentElement);
   x.fillStyle=css.getPropertyValue('--mut');x.font='12px system-ui';
@@ -206,16 +223,47 @@ function drawHist(){
   const mx=Math.max(...d.map(h=>h.punches)),bw=(r.width-20)/d.length;
   d.forEach((h,i)=>{const bh=(r.height-40)*h.punches/mx;x.fillStyle=css.getPropertyValue('--acc');x.fillRect(10+i*bw+4,r.height-20-bh,bw-8,bh);x.fillStyle=css.getPropertyValue('--mut');x.fillText(h.punches,10+i*bw+4,r.height-24-bh);const dt=new Date(h.date);x.fillText(dt.getDate()+'/'+(dt.getMonth()+1),10+i*bw+4,r.height-5)});
 }
-$('bCsv').onclick=()=>{const rows=[['tarih','program','yumruk','sag','sol','ort_g','max_g','sure_sn'],...history.map(h=>[h.date,h.prog,h.punches,h.right,h.punches-h.right,h.avg,h.max,h.sec])];
+$('bCsv').onclick=()=>{const rows=[['tarih','program','yumruk','sag','sol','ort_g','max_g','yumruk_dk','el_hizi_dps','kcal','sure_sn'],...history.map(h=>[h.date,h.prog,h.punches,h.right,h.punches-h.right,h.avg,h.max,h.rate??'',h.spd??'',h.kcal??'',h.sec])];
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+rows.map(r=>r.map(v=>`"${v}"`).join(';')).join('\n')],{type:'text/csv'}));a.download='antrenman_gecmisi.csv';a.click()};
 $('bClear').onclick=()=>{if(confirm('Tüm geçmiş silinsin mi?')){history=[];LS.set('hist',history);drawHist()}};
+
+// ---- Gelişim ----
+function line(id,vals,color){
+  const c=$(id),r=c.getBoundingClientRect();if(!r.width)return;const dpr=devicePixelRatio||1;c.width=r.width*dpr;c.height=r.height*dpr;const x=c.getContext('2d');x.scale(dpr,dpr);x.clearRect(0,0,r.width,r.height);
+  const css=getComputedStyle(document.documentElement);x.font='12px system-ui';x.fillStyle=css.getPropertyValue('--mut');
+  const v=vals.filter(a=>a!=null);if(v.length<2){x.fillText('Grafik için en az 2 antrenman gerekir',10,24);return}
+  const mn=Math.min(...v),mx=Math.max(...v),pad=(mx-mn)||1,L=36,W=r.width-L-10,H=r.height-30,n=vals.length;
+  const X=i=>L+(n===1?0:i*W/(n-1)),Y=a=>10+H-(a-mn)/pad*H;
+  x.strokeStyle=css.getPropertyValue('--line');x.beginPath();x.moveTo(L,10);x.lineTo(L,10+H);x.lineTo(L+W,10+H);x.stroke();
+  x.fillText(Math.round(mx*10)/10,2,16);x.fillText(Math.round(mn*10)/10,2,10+H);
+  x.strokeStyle=color;x.lineWidth=2.5;x.beginPath();let st=false;vals.forEach((a,i)=>{if(a==null)return;st?x.lineTo(X(i),Y(a)):x.moveTo(X(i),Y(a));st=true});x.stroke();
+  x.fillStyle=color;vals.forEach((a,i)=>{if(a!=null){x.beginPath();x.arc(X(i),Y(a),3.5,0,7);x.fill()}});
+}
+function drawDev(){
+  const d=history.filter(h=>h.sec>=30).slice(0,30).reverse();
+  const get={rate:h=>h.rate??null,punches:h=>h.punches,avg:h=>h.avg,spd:h=>h.spd??null,kcal:h=>h.kcal??null};
+  line('c1',d.map(get.rate),'#ff5a36');line('c2',d.map(get.punches),'#2fbf71');line('c3',d.map(get.avg),'#f2b93b');line('c4',d.map(get.spd),'#4a9eff');line('c5',d.map(get.kcal),'#c06bff');
+  const avg=a=>a.reduce((p,q)=>p+q,0)/a.length;
+  function tr(label,f,unit){const v=d.map(f).filter(a=>a!=null);if(!v.length)return`<div class="stat"><b>–</b><span>${label}</span></div>`;
+    const last=v.slice(-5),prev=v.slice(-10,-5);let ch='';if(prev.length){const p=(avg(last)-avg(prev))/avg(prev)*100;ch=`<span style="color:${p>=0?'var(--ok)':'var(--acc)'}"> ${p>=0?'▲':'▼'}${Math.abs(p).toFixed(0)}%</span>`}
+    return`<div class="stat"><b>${(Math.round(avg(last)*10)/10)}${ch}</b><span>${label} (son ${last.length} ort.)</span></div>`}
+  $('devSum').innerHTML=tr('Yumruk/dk',get.rate)+tr('Yumruk',get.punches)+tr('Güç (g)',get.avg)+tr('El hızı (°/sn)',get.spd)+tr('Kalori',get.kcal);
+  const best=(f)=>{const v=d.map(f).filter(a=>a!=null);return v.length?Math.max(...v):'–'};
+  $('devNote').textContent=d.length?`Rekorlar: ${best(get.punches)} yumruk · ${best(get.rate)} yum/dk · ${Math.max(...history.map(h=>h.max||0)).toFixed(1)} g tepe güç. ▲▼ = son 5 antrenman ile önceki 5'in karşılaştırması.`:'Henüz 30 saniyeden uzun antrenman yok.';
+}
+// ---- Yedek ----
+$('bBak').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify({v:1,hist:history,progs:custom,cfg})],{type:'application/json'}));a.download='eldiven_yedek_'+new Date().toISOString().slice(0,10)+'.json';a.click()};
+$('bImp').onclick=()=>$('fImp').click();
+$('fImp').onchange=async e=>{try{const j=JSON.parse(await e.target.files[0].text());const ids=new Set(history.map(h=>h.id));let n=0;for(const h of (j.hist||[]))if(!ids.has(h.id)){history.push(h);n++}
+  history.sort((a,b)=>b.id-a.id);history=history.slice(0,500);LS.set('hist',history);const cids=new Set(custom.map(p=>p.id));for(const p of (j.progs||[]))if(!cids.has(p.id))custom.push(p);LS.set('progs',custom);renderProgs();drawHist();drawDev();msg(n+' antrenman içe aktarıldı.')}catch(err){msg('Yedek dosyası okunamadı.')}e.target.value=''};
 
 // ---- Ayarlar / sekmeler ----
 function applySens(){for(const h of ['R','L'])gloves[h].det.setSens(cfg.sens);$('sensVal').textContent=cfg.sens}
 $('sens').value=cfg.sens;applySens();$('sndPunch').checked=cfg.punchSnd;$('sndVoice').checked=cfg.voice;
 $('sens').oninput=e=>{cfg.sens=+e.target.value;LS.set('cfg',cfg);applySens()};
+$('kg').value=cfg.kg||'';$('kg').oninput=e=>{cfg.kg=Math.max(0,parseFloat(e.target.value)||0);LS.set('cfg',cfg)};
 $('sndPunch').onchange=e=>{cfg.punchSnd=e.target.checked;LS.set('cfg',cfg)};$('sndVoice').onchange=e=>{cfg.voice=e.target.checked;LS.set('cfg',cfg)};
-$('nav').onclick=e=>{const t=e.target.dataset.t;if(!t)return;for(const b of $('nav').children)b.classList.toggle('on',b===e.target);for(const s of ['train','prog','hist','set'])$(s).classList.toggle('hide',s!==t);if(t==='hist')drawHist()};
+$('nav').onclick=e=>{const t=e.target.dataset.t;if(!t)return;for(const b of $('nav').children)b.classList.toggle('on',b===e.target);for(const s of ['train','prog','hist','dev','set'])$(s).classList.toggle('hide',s!==t);if(t==='hist')drawHist();if(t==='dev')drawDev()};
 renderProgs();drawHist();render();ui('R');ui('L');
 if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script></body></html>
