@@ -78,12 +78,17 @@ canvas{width:100%;height:160px}
 </section>
 
 <section id="hist" class="hide">
+  <div class="card"><div class="row" style="margin-bottom:8px"><b>Dönem özeti</b>
+    <select id="perH" style="max-width:200px"><option value="day">Günlük</option><option value="week">Haftalık</option><option value="month">Aylık</option><option value="quarter">Çeyreklik (3 ay)</option></select></div>
+    <div style="overflow:auto"><table><thead><tr><th>Dönem</th><th>Antrenman</th><th>Yumruk</th><th>Yum/dk</th><th>Ort. g</th><th>kcal</th><th>Süre</th></tr></thead><tbody id="pBody"></tbody></table></div></div>
   <div class="card"><canvas id="chart"></canvas></div>
   <div class="card"><div class="row" style="margin-bottom:8px"><button id="bCsv">CSV indir</button><button id="bClear">Geçmişi sil</button></div>
   <div style="overflow:auto"><table><thead><tr><th>Tarih</th><th>Program</th><th>Yumruk</th><th>Ort. g</th><th>Max g</th><th>Yum/dk</th><th>kcal</th><th>Süre</th></tr></thead><tbody id="hBody"></tbody></table></div></div>
 </section>
 
 <section id="dev" class="hide">
+  <div class="card"><div class="row"><b>Görünüm</b>
+    <select id="perD" style="max-width:240px"><option value="session">Antrenman başına (son 30)</option><option value="day">Günlük</option><option value="week">Haftalık</option><option value="month">Aylık</option><option value="quarter">Çeyreklik (3 ay)</option></select></div></div>
   <div class="card"><div id="devSum" class="grid"></div><p class="sub" id="devNote"></p></div>
   <div class="card"><b>Yumruk hızı (yumruk/dk)</b><canvas id="c1"></canvas></div>
   <div class="card"><b>Toplam yumruk</b><canvas id="c2"></canvas></div>
@@ -118,6 +123,12 @@ const COMBOS=['bir, iki','bir, iki, üç','bir, iki, üç, dört','jab, çapraz'
 let custom=LS.get('progs',[]), history=LS.get('hist',[]), cfg=Object.assign({sens:7,punchSnd:true,voice:true,kg:0},LS.get('cfg',{}));
 const allProgs=()=>[{id:'free',name:'Serbest (süresiz)'},...BUILTIN,...custom];
 const gloves={R:{name:'Sağ',dev:null,det:new Core.Detector({sens:cfg.sens}),fr:new Core.Framer()},L:{name:'Sol',dev:null,det:new Core.Detector({sens:cfg.sens}),fr:new Core.Framer()}};
+let perH=LS.get('perH','week'),perD=LS.get('perD','session');
+function bstart(ts,p){const d=new Date(ts);d.setHours(0,0,0,0);if(p==='week')d.setDate(d.getDate()-((d.getDay()+6)%7));else if(p==='month')d.setDate(1);else if(p==='quarter'){d.setDate(1);d.setMonth(Math.floor(d.getMonth()/3)*3)}return d.getTime()}
+function blabel(t,p){const d=new Date(t);if(p==='day')return d.toLocaleDateString('tr-TR');if(p==='week'){const e=new Date(t+6*864e5);return d.toLocaleDateString('tr-TR',{day:'2-digit',month:'2-digit'})+' – '+e.toLocaleDateString('tr-TR')}if(p==='month')return d.toLocaleDateString('tr-TR',{month:'long',year:'numeric'});return d.getFullYear()+' Ç'+(Math.floor(d.getMonth()/3)+1)}
+function aggregate(list,p){const m=new Map();for(const h of list){const k=bstart(h.date,p);let b=m.get(k);if(!b){b={start:k,label:blabel(k,p),n:0,punches:0,sec:0,work:0,kcal:0,kn:0,pw:0,sp:0,spn:0};m.set(k,b)}
+  b.n++;b.punches+=h.punches;b.sec+=h.sec;b.work+=(h.work!=null?h.work:h.sec);if(h.kcal!=null){b.kcal+=h.kcal;b.kn++}b.pw+=h.avg*h.punches;if(h.spd!=null){b.sp+=h.spd*h.punches;b.spn+=h.punches}}
+  return [...m.values()].sort((a,b)=>a.start-b.start).map(b=>({label:b.label,n:b.n,punches:b.punches,sec:b.sec,rate:b.work>0?Math.round(b.punches/(b.work/60)):null,avg:b.punches?+(b.pw/b.punches).toFixed(2):null,spd:b.spn?Math.round(b.sp/b.spn):null,kcal:b.kn?b.kcal:null}))}
 function met(rate){return 4+Math.min(rate,120)/120*4}
 function kcalOf(kg,work,rest,rate){return kg>0?Math.round((met(rate)*work+2*rest)/3600*kg):null}
 let S=null, ctx=null, wl=null, tick=null, demoT=null;
@@ -128,20 +139,35 @@ function say(t){if(!cfg.voice||!window.speechSynthesis)return;try{const u=new Sp
 const fmt=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
 
 // ---- Bluetooth ----
+const SVC='0000ffe0-0000-1000-8000-00805f9b34fb',CHR='0000ffe1-0000-1000-8000-00805f9b34fb';
+function feed(h,u8){const G=gloves[h],t=performance.now()/1000;for(const s of G.fr.push(u8,t)){const p=G.det.push(s);if(p)punch(h,p)}}
 async function connect(h){
-  if(!navigator.bluetooth){msg('Bu tarayıcı Web Bluetooth desteklemiyor. Chrome veya Edge kullan.');return}
-  const G=gloves[h]; msg('Eldiven aranıyor…');
+  const G=gloves[h],N=window.NativeBle;   // NativeBle: APK icinde yerel Bluetooth, tarayicida Web Bluetooth
+  if(!N&&!navigator.bluetooth){msg('Bu tarayıcı Web Bluetooth desteklemiyor. Chrome veya Edge kullan.');return}
+  msg('Eldiven aranıyor…');
   try{
-    const dev=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'FF'}],optionalServices:[0xffe0]});
-    dev.addEventListener('gattserverdisconnected',()=>{G.dev=null;ui(h);msg(G.name+' eldiven bağlantısı koptu. Eldiveni salla ve tekrar bağlan.')});
-    const srv=await dev.gatt.connect(), svc=await srv.getPrimaryService(0xffe0), ch=await svc.getCharacteristic(0xffe1);
-    G.fr=new Core.Framer(); G.det=new Core.Detector({sens:cfg.sens});
-    ch.addEventListener('characteristicvaluechanged',e=>{const v=new Uint8Array(e.target.value.buffer);const t=performance.now()/1000;for(const s of G.fr.push(v,t)){const p=G.det.push(s);if(p)punch(h,p)}});
-    await ch.startNotifications(); G.dev=dev; ui(h); msg('');
-  }catch(e){msg(e.name==='NotFoundError'?'Eldiven seçilmedi.':'Bağlanamadı: '+e.message)}
+    G.fr=new Core.Framer();G.det=new Core.Detector({sens:cfg.sens});
+    const lost=()=>{if(!G.dev)return;G.dev=null;ui(h);msg(G.name+' eldiven bağlantısı koptu. Eldiveni salla ve tekrar bağlan.')};
+    if(N){
+      await N.initialize({androidNeverForLocation:true});
+      const d=await N.requestDevice({namePrefix:'FF',optionalServices:[SVC]});
+      await N.connect(d.deviceId,lost);
+      await N.startNotifications(d.deviceId,SVC,CHR,dv=>feed(h,new Uint8Array(dv.buffer,dv.byteOffset,dv.byteLength)));
+      G.dev={name:d.name||'FF-Glove'};
+      G.disc=async()=>{G.dev=null;ui(h);try{await N.disconnect(d.deviceId)}catch(e){}};
+    }else{
+      const dev=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'FF'}],optionalServices:[0xffe0]});
+      dev.addEventListener('gattserverdisconnected',lost);
+      const srv=await dev.gatt.connect(),svc=await srv.getPrimaryService(0xffe0),ch=await svc.getCharacteristic(0xffe1);
+      ch.addEventListener('characteristicvaluechanged',e=>feed(h,new Uint8Array(e.target.value.buffer)));
+      await ch.startNotifications();G.dev=dev;
+      G.disc=()=>{G.dev=null;ui(h);try{dev.gatt.disconnect()}catch(e){}};
+    }
+    ui(h);msg('');
+  }catch(e){msg((e&&e.name==='NotFoundError')||/cancel/i.test(String(e&&e.message))?'Eldiven seçilmedi.':'Bağlanamadı: '+((e&&e.message)||e))}
 }
 function ui(h){const G=gloves[h];$('d'+h).classList.toggle('on',!!G.dev);$('t'+h).textContent=G.name+': '+(G.dev?G.dev.name:'yok');$('b'+h).textContent=G.dev?'Kes':'Bağlan'}
-for(const h of ['R','L'])$('b'+h).onclick=()=>{const G=gloves[h];if(G.dev){G.dev.gatt.disconnect()}else connect(h)};
+for(const h of ['R','L'])$('b'+h).onclick=()=>{const G=gloves[h];if(G.dev&&G.disc)G.disc();else connect(h)};
 
 // ---- Yumruk / oturum ----
 function punch(h,p){
@@ -215,6 +241,7 @@ $('progList').onclick=e=>{const d=e.target.dataset;if(d.d){custom=custom.filter(
 
 // ---- Geçmiş ----
 function drawHist(){
+  $('pBody').innerHTML=aggregate(history,perH).reverse().map(b=>`<tr><td>${b.label}</td><td>${b.n}</td><td>${b.punches}</td><td>${b.rate??'–'}</td><td>${b.avg??'–'}</td><td>${b.kcal??'–'}</td><td>${fmt(b.sec)}</td></tr>`).join('')||'<tr><td colspan="7" class="sub">Kayıt yok.</td></tr>';
   $('hBody').innerHTML=history.map(h=>`<tr><td>${new Date(h.date).toLocaleString('tr-TR',{dateStyle:'short',timeStyle:'short'})}</td><td style="text-align:left">${String(h.prog).replace(/</g,'&lt;')}</td><td>${h.punches}</td><td>${h.avg}</td><td>${h.max}</td><td>${h.rate??'–'}</td><td>${h.kcal??'–'}</td><td>${fmt(h.sec)}</td></tr>`).join('')||'<tr><td colspan="8" class="sub">Kayıt yok.</td></tr>';
   const c=$('chart'),r=c.getBoundingClientRect();if(!r.width)return;const dpr=devicePixelRatio||1;c.width=r.width*dpr;c.height=r.height*dpr;const x=c.getContext('2d');x.scale(dpr,dpr);x.clearRect(0,0,r.width,r.height);
   const d=history.slice(0,14).reverse();const css=getComputedStyle(document.documentElement);
@@ -240,7 +267,8 @@ function line(id,vals,color){
   x.fillStyle=color;vals.forEach((a,i)=>{if(a!=null){x.beginPath();x.arc(X(i),Y(a),3.5,0,7);x.fill()}});
 }
 function drawDev(){
-  const d=history.filter(h=>h.sec>=30).slice(0,30).reverse();
+  const src=history.filter(h=>h.sec>=30);
+  const d=perD==='session'?src.slice(0,30).reverse().map(h=>({punches:h.punches,avg:h.avg,rate:h.rate??null,spd:h.spd??null,kcal:h.kcal??null})):aggregate(src,perD).slice(-30);
   const get={rate:h=>h.rate??null,punches:h=>h.punches,avg:h=>h.avg,spd:h=>h.spd??null,kcal:h=>h.kcal??null};
   line('c1',d.map(get.rate),'#ff5a36');line('c2',d.map(get.punches),'#2fbf71');line('c3',d.map(get.avg),'#f2b93b');line('c4',d.map(get.spd),'#4a9eff');line('c5',d.map(get.kcal),'#c06bff');
   const avg=a=>a.reduce((p,q)=>p+q,0)/a.length;
@@ -249,7 +277,7 @@ function drawDev(){
     return`<div class="stat"><b>${(Math.round(avg(last)*10)/10)}${ch}</b><span>${label} (son ${last.length} ort.)</span></div>`}
   $('devSum').innerHTML=tr('Yumruk/dk',get.rate)+tr('Yumruk',get.punches)+tr('Güç (g)',get.avg)+tr('El hızı (°/sn)',get.spd)+tr('Kalori',get.kcal);
   const best=(f)=>{const v=d.map(f).filter(a=>a!=null);return v.length?Math.max(...v):'–'};
-  $('devNote').textContent=d.length?`Rekorlar: ${best(get.punches)} yumruk · ${best(get.rate)} yum/dk · ${Math.max(...history.map(h=>h.max||0)).toFixed(1)} g tepe güç. ▲▼ = son 5 antrenman ile önceki 5'in karşılaştırması.`:'Henüz 30 saniyeden uzun antrenman yok.';
+  $('devNote').textContent=src.length?`Rekorlar (tek antrenman): ${Math.max(...src.map(h=>h.punches))} yumruk · ${Math.max(...src.map(h=>h.rate||0))} yum/dk · ${Math.max(...history.map(h=>h.max||0)).toFixed(1)} g tepe güç. ▲▼ = son 5 ${perD==='session'?'antrenman':'dönem'} ile önceki 5'in karşılaştırması. ${perD==='session'?'':'Yumruk ve kalori dönem toplamıdır.'}`:'Henüz 30 saniyeden uzun antrenman yok.';
 }
 // ---- Yedek ----
 $('bBak').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify({v:1,hist:history,progs:custom,cfg})],{type:'application/json'}));a.download='eldiven_yedek_'+new Date().toISOString().slice(0,10)+'.json';a.click()};
@@ -262,6 +290,7 @@ function applySens(){for(const h of ['R','L'])gloves[h].det.setSens(cfg.sens);$(
 $('sens').value=cfg.sens;applySens();$('sndPunch').checked=cfg.punchSnd;$('sndVoice').checked=cfg.voice;
 $('sens').oninput=e=>{cfg.sens=+e.target.value;LS.set('cfg',cfg);applySens()};
 $('kg').value=cfg.kg||'';$('kg').oninput=e=>{cfg.kg=Math.max(0,parseFloat(e.target.value)||0);LS.set('cfg',cfg)};
+$('perH').value=perH;$('perD').value=perD;$('perH').onchange=e=>{perH=e.target.value;LS.set('perH',perH);drawHist()};$('perD').onchange=e=>{perD=e.target.value;LS.set('perD',perD);drawDev()};
 $('sndPunch').onchange=e=>{cfg.punchSnd=e.target.checked;LS.set('cfg',cfg)};$('sndVoice').onchange=e=>{cfg.voice=e.target.checked;LS.set('cfg',cfg)};
 $('nav').onclick=e=>{const t=e.target.dataset.t;if(!t)return;for(const b of $('nav').children)b.classList.toggle('on',b===e.target);for(const s of ['train','prog','hist','dev','set'])$(s).classList.toggle('hide',s!==t);if(t==='hist')drawHist();if(t==='dev')drawDev()};
 renderProgs();drawHist();render();ui('R');ui('L');
