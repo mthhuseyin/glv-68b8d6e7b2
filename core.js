@@ -33,22 +33,27 @@
     }
   }
 
-  // Yumruk: donus hizi esigi asilinca 0.25 sn pencerede tepe ivme/donus olculur.
+  // Yumruk: donus hizi esigi asilinca tepe izlenir; sinyal tepeden dusunce yumruk bildirilir ve
+  // hemen sonraki yumruga hazirlanilir (arka arkaya hizli yumruklar ayri sayilir).
   class Detector {
-    constructor(o = {}) { this.setSens(o.sens ?? 5); this.minA = o.minA ?? 1.8; this.refr = 0.45; this.win = 0.25; this.cur = null; this.last = -9; }
-    setSens(s) { this.gTh = 800 - (s - 1) * 60; }   // 1..10 -> 800..260 dps
+    constructor(o = {}) { this.setSens(o.sens ?? 7); this.minA = o.minA ?? 1.6; this.fall = 0.55; this.maxw = 0.4; this.gap = 0.15; this.st = 0; this.cur = null; this.last = -9; }
+    setSens(s) { this.hi = 800 - (s - 1) * 60; this.lo = this.hi * 0.6; }   // 1..10 -> 800..260 dps
     push(s) {
-      if (!this.cur) {
-        if (s.g > this.gTh && s.t - this.last > this.refr) this.cur = { t0: s.t, pa: s.a, pg: s.g };
+      if (this.st === 0) {
+        if (s.g > this.hi && s.t - this.last > this.gap) { this.st = 1; this.cur = { t0: s.t, pa: s.a, pg: s.g }; }
         return null;
       }
-      const c = this.cur;
-      if (s.a > c.pa) c.pa = s.a;
-      if (s.g > c.pg) c.pg = s.g;
-      if (s.t - c.t0 >= this.win) {
-        this.cur = null; this.last = s.t;
-        if (c.pa >= this.minA) return { t: c.t0, power: c.pa, speed: c.pg };
+      if (this.st === 1) {
+        const c = this.cur;
+        if (s.a > c.pa) c.pa = s.a;
+        if (s.g > c.pg) c.pg = s.g;
+        if (s.g < c.pg * this.fall || s.t - c.t0 > this.maxw) {
+          this.st = 2; this.last = s.t;
+          if (c.pa >= this.minA) return { t: c.t0, power: c.pa, speed: c.pg };
+        }
+        return null;
       }
+      if (s.g < this.lo) this.st = 0;   // sakinlesince yeni yumruga hazir
       return null;
     }
   }

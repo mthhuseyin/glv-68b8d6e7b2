@@ -101,7 +101,7 @@ const BUILTIN=[
  {id:'b3',name:'Kombinasyon — 5 tur × 2 dk / 45 sn',rounds:5,work:120,rest:45,combo:1,target:0},
  {id:'b4',name:'Sprint — 8 tur × 30 sn / 15 sn',rounds:8,work:30,rest:15,combo:0,target:0}];
 const COMBOS=['bir, iki','bir, iki, üç','bir, iki, üç, dört','jab, çapraz','jab, jab, çapraz','bir, iki, kroşe','jab, çapraz, kroşe, çapraz','savuştur, bir, iki'];
-let custom=LS.get('progs',[]), history=LS.get('hist',[]), cfg=Object.assign({sens:5,punchSnd:true,voice:true},LS.get('cfg',{}));
+let custom=LS.get('progs',[]), history=LS.get('hist',[]), cfg=Object.assign({sens:7,punchSnd:true,voice:true},LS.get('cfg',{}));
 const allProgs=()=>[{id:'free',name:'Serbest (süresiz)'},...BUILTIN,...custom];
 const gloves={R:{name:'Sağ',dev:null,det:new Core.Detector({sens:cfg.sens}),fr:new Core.Framer()},L:{name:'Sol',dev:null,det:new Core.Detector({sens:cfg.sens}),fr:new Core.Framer()}};
 let S=null, ctx=null, wl=null, tick=null, demoT=null;
